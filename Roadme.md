@@ -1,12 +1,13 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
+
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import customerRoutes from './routes/customerRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
-import  csvUpload  from './utils/uploadMiddleware.js'; // Cambio aquí
+import csvUpload from './utils/uploadMiddleware.js';
 import { loadCSVData } from './services/csvLoader.js';
 import db from './config/db.js';
 
@@ -20,8 +21,8 @@ const allowedOrigins = [
   'http://127.0.0.1:5500',
   'http://localhost:8080',
   'http://127.0.0.1:8080',
-  'http://localhost:3000', // Añadir para React/Vue
-  'http://127.0.0.1:3000'  // Añadir para React/Vue
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
 ];
 
 if (process.env.FRONTEND_URL) {
@@ -47,38 +48,39 @@ app.use(bodyParser.json());
 app.use('/api/customers', customerRoutes);
 app.use('/api/reports', reportRoutes);
 
-// Endpoint para carga de CSV (CORREGIDO)
-// Reemplaza el endpoint de carga CSV con:
+// Endpoint para carga de CSV - VERSIÓN CORREGIDA
 app.post('/api/upload-csv', csvUpload, async (req, res) => {
   try {
+    // 1. Diagnóstico de archivos recibidos
+    console.log('Archivos recibidos:', req.files ? Object.keys(req.files) : 'No files');
+    
+    // 2. Manejo seguro de archivos
     if (!req.files || !req.files.csv) {
+      console.warn('⚠️ No se recibió archivo CSV. Headers:', req.headers);
       return res.status(400).json({
         success: false,
         error: 'No se subió ningún archivo CSV'
       });
     }
     
+    // 3. Convertir a string con manejo de encoding
     const csvString = req.files.csv.data.toString('utf8');
+    console.log(`📝 CSV recibido (${req.files.csv.data.length} bytes)`);
+    
+    // 4. Procesar CSV
     const result = await loadCSVData(csvString);
     
-    // Respuesta simplificada sin strictContentLength
-    res.setHeader('Content-Type', 'application/json');
-    res.write(JSON.stringify({
+    // 5. Respuesta segura (sin strictContentLength)
+    res.status(200).json({
       success: true,
       message: result.message
-    }));
-    res.end();
+    });
   } catch (error) {
-    console.error('Error en carga CSV:', error);
-    
-    // Respuesta de error simplificada
-    res.setHeader('Content-Type', 'application/json');
-    res.status(500);
-    res.write(JSON.stringify({
+    console.error('🔥 Error en carga CSV:', error);
+    res.status(500).json({
       success: false,
       error: 'Error procesando CSV: ' + error.message
-    }));
-    res.end();
+    });
   }
 });
 
@@ -104,7 +106,7 @@ app.use((req, res) => {
 
 // Manejo de errores global
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('🚨 Error global:', err.stack);
   res.status(500).json({
     success: false,
     error: 'Error interno del servidor'
@@ -113,7 +115,8 @@ app.use((err, req, res, next) => {
 
 // Iniciar el servidor
 app.listen(PORT, () => {
-  console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
+  console.log('🌍 Orígenes permitidos:', allowedOrigins);
 });
 
 // Probar la conexión a la base de datos
@@ -125,7 +128,6 @@ db.getConnection()
   .catch(error => {
     console.error('❌ Error de conexión a MySQL:', error.message);
   });
-
 ```
 ```
 
