@@ -1,5 +1,41 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
+// Reemplaza el endpoint de carga CSV con:
+app.post('/api/upload-csv', csvUpload, async (req, res) => {
+  try {
+    if (!req.files || !req.files.csv) {
+      return res.status(400).json({
+        success: false,
+        error: 'No se subió ningún archivo CSV'
+      });
+    }
+    
+    const csvString = req.files.csv.data.toString('utf8');
+    const result = await loadCSVData(csvString);
+    
+    // Respuesta simplificada sin strictContentLength
+    res.setHeader('Content-Type', 'application/json');
+    res.write(JSON.stringify({
+      success: true,
+      message: result.message
+    }));
+    res.end();
+  } catch (error) {
+    console.error('Error en carga CSV:', error);
+    
+    // Respuesta de error simplificada
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500);
+    res.write(JSON.stringify({
+      success: false,
+      error: 'Error procesando CSV: ' + error.message
+    }));
+    res.end();
+  }
+});
+```
+```
+
 // Reemplaza TODO el contenido de csvLoader.js con este código:
 import db from '../config/db.js';
 import { parse } from 'csv-parse/sync';
