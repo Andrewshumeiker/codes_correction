@@ -1,54 +1,19 @@
-### Correcciones Necesarias para la Carga de CSV
+Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 
-El problema principal está en la incompatibilidad entre el middleware `express-fileupload` y `multer`, además de algunos errores en el manejo de archivos. Aquí están las correcciones:
+### 1. Archivo: `backend/app.js`
 
-#### 1. **app.js** (backend)
+**Cambios necesarios:**
+
 ```javascript
-// Eliminar express-fileupload y usar solo multer
-import express from 'express';
-import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import customerRoutes from './routes/customerRoutes.js';
-import reportRoutes from './routes/reportRoutes.js';
-import { csvUpload } from './utils/uploadMiddleware.js'; // Cambio aquí
-import { loadCSVData } from './services/csvLoader.js';
-import db from './config/db.js';
+// ... código existente ...
+import { csvUpload } from './utils/uploadMiddleware.js'; // <-- Esta línea ya existe
 
-dotenv.config();
-const app = express();
-const PORT = process.env.PORT || 3000;
+// ELIMINAR ESTA LÍNEA:
+app.use(fileUpload());  // <-- BORRA ESTA LÍNEA COMPLETAMENTE
 
-// Configuración de CORS actualizada
-const allowedOrigins = [
-  'http://localhost:5500',
-  'http://127.0.0.1:5500',
-  'http://localhost:8080',
-  'http://127.0.0.1:8080',
-  'http://localhost:3000', // Añadir para React/Vue
-  'http://127.0.0.1:3000'  // Añadir para React/Vue
-];
+// ... código existente ...
 
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
-}
-
-const corsOptions = {
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
-app.use(bodyParser.json());
-
-// RUTAS
-app.use('/api/customers', customerRoutes);
-app.use('/api/reports', reportRoutes);
-
-// Endpoint para carga de CSV (CORREGIDO)
+// REEMPLAZAR TODO EL BLOQUE DEL ENDPOINT /api/upload-csv CON ESTE CÓDIGO:
 app.post('/api/upload-csv', csvUpload, async (req, res) => {
   try {
     // Usar req.files en lugar de req.file
@@ -75,10 +40,13 @@ app.post('/api/upload-csv', csvUpload, async (req, res) => {
   }
 });
 
-// Resto del código sin cambios...
+// ... el resto del código permanece igual ...
 ```
 
-#### 2. **uploadMiddleware.js** (backend)
+### 2. Archivo: `backend/utils/uploadMiddleware.js`
+
+**Reemplazar TODO el contenido del archivo con:**
+
 ```javascript
 import multer from 'multer';
 
@@ -88,8 +56,8 @@ const upload = multer({
     const allowedMimes = [
       'text/csv',
       'application/vnd.ms-excel',
-      'text/plain', // Añadir tipo genérico
-      'application/octet-stream' // Para algunos navegadores
+      'text/plain',
+      'application/octet-stream'
     ];
     
     const isCSV = allowedMimes.includes(file.mimetype) || 
@@ -101,38 +69,47 @@ const upload = multer({
       cb(new Error('Tipo de archivo inválido. Solo se permiten archivos CSV'), false);
     }
   },
-  limits: { fileSize: 20 * 1024 * 1024 } // 20MB
+  limits: { fileSize: 20 * 1024 * 1024 }
 });
 
 // Exportar directamente el middleware
 export default upload.single('csv');
 ```
 
-#### 3. **main.js** (frontend)
+### 3. Archivo: `frontend/public/js/main.js`
+
+**Cambiar SOLO esta parte del código:**
+
 ```javascript
-// En la función de carga CSV:
+// ... código existente ...
+
 input.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   
   const formData = new FormData();
-  formData.append('csv', file); // Campo 'csv' coincide con el backend
-
+  formData.append('csv', file); // 'csv' debe coincidir con el backend
+  
   try {
     loadCsvBtn.disabled = true;
     loadCsvBtn.textContent = 'Cargando...';
     
+    // IMPORTANTE: NO agregar headers 'Content-Type'
     const response = await fetch(`${API_BASE_URL}/api/upload-csv`, {
       method: 'POST',
-      body: formData,
-      // NO incluir 'Content-Type' header
+      body: formData
     });
     
-    // Resto del código sin cambios...
+    // ... el resto del código permanece igual ...
 };
+
+// ... código existente ...
 ```
 
-#### 4. **csvLoader.js** (backend)
+### 4. Archivo: `backend/services/csvLoader.js`
+
+**Modificar la función `loadCSVData` así:**
+
 ```javascript
 export async function loadCSVData(csvString) {
   try {
@@ -144,7 +121,7 @@ export async function loadCSVData(csvString) {
       skip_records_with_error: true,
       cast: (value, context) => {
         // Convertir campos vacíos a null
-        if (value.trim() === '') return null;
+        if (!value || value.trim() === '') return null;
         
         // Convertir montos a números
         if (context.column.includes('Monto') || 
@@ -163,12 +140,12 @@ export async function loadCSVData(csvString) {
       }
     });
 
-    // Validación de registros
     if (!records || records.length === 0) {
       throw new Error('El archivo CSV está vacío o no contiene datos válidos');
     }
 
-    // Resto del código sin cambios...
+    // ... EL RESTO DEL CÓDIGO PERMANECE IGUAL DESDE AQUÍ ...
+    
   } catch (error) {
     console.error('Error en loadCSVData:', error);
     throw new Error(`Error al procesar CSV: ${error.message}`);
@@ -176,16 +153,19 @@ export async function loadCSVData(csvString) {
 }
 ```
 
-#### 5. **customerController.js** (backend)
+### 5. Archivo: `backend/controllers/customerController.js`
+
+**Añadir manejo de error para duplicados en la función `createCustomer`:**
+
 ```javascript
-// Añadir manejo de errores más detallado
 export const createCustomer = async (req, res) => {
+  // ... código existente ...
   try {
     // ... código existente ...
   } catch (error) {
     console.error('Error creando cliente:', error);
     
-    // Manejar error de duplicados
+    // AÑADIR ESTE BLOQUE PARA MANEJAR ERRORES DE DUPLICADOS:
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({
         success: false,
@@ -201,65 +181,68 @@ export const createCustomer = async (req, res) => {
 };
 ```
 
-### Pasos Adicionales:
+### 6. Archivo: `backend/load-data.js`
 
-1. **Actualizar dependencias:**
-```bash
-npm install multer csv-parse
-```
+**Modificar las rutas de los archivos CSV:**
 
-2. **Verificar estructura de tablas:**
-```sql
--- Ejecutar en MySQL
-ALTER TABLE invoices
-ADD COLUMN billing_period VARCHAR(50),
-ADD COLUMN total_amount DECIMAL(10,2);
-
-ALTER TABLE transactions
-ADD COLUMN transaction_id VARCHAR(50) PRIMARY KEY,
-ADD COLUMN amount DECIMAL(10,2),
-ADD COLUMN transaction_date DATE,
-ADD COLUMN status VARCHAR(20);
-```
-
-3. **Archivo .env:**
-```env
-# backend/.env
-FRONTEND_URL=http://localhost:5500 # Cambiar por tu URL de frontend
-```
-
-### Prueba Final:
-
-1. **Verificar carga manual:**
 ```javascript
-// Probar en la consola del navegador
-const testCSV = `Nombre del Cliente,Correo Electrónico,Número de Identificación,Dirección,Teléfono,Plataforma Utilizada,Número de Factura,Período Facturado,Total Factura,ID de Transacción,Monto,Fecha de Transacción,Estado
-John Doe,john@example.com,123456,123 Main St,555-1234,Netflix,INV-001,2023-01,100.50,TRX-001,100.50,2023-01-15,Completada`;
+// ... código existente ...
 
-fetch('http://localhost:3000/api/upload-csv', {
-  method: 'POST',
-  body: testCSV,
-  headers: {
-    'Content-Type': 'text/csv'
-  }
-}).then(console.log).catch(console.error);
+async function main() {
+  // ... código existente ...
+  
+  try {
+    // ... código existente ...
+    
+    // REEMPLAZAR ESTAS 4 LÍNEAS:
+    const basePath = path.resolve(process.cwd(), 'backend', 'database');
+    
+    await loadTableFromCsv(connection, path.join(basePath, 'customers.csv'), 'customers');
+    await loadTableFromCsv(connection, path.join(basePath, 'platforms.csv'), 'platforms');
+    await loadTableFromCsv(connection, path.join(basePath, 'invoices.csv'), 'invoices');
+    await loadTableFromCsv(connection, path.join(basePath, 'transactions.csv'), 'transactions');
+    
+    // ... el resto del código permanece igual ...
+};
 ```
 
-2. **Verificar logs del backend:**
-```bash
-# Buscar estos mensajes
-Archivo recibido: { name: 'clientes.csv', size: 12345, mimetype: 'text/csv' }
-Registros procesados: 250
-```
+### Pasos adicionales obligatorios:
 
-Con estas correcciones, el sistema debería permitir subir y procesar archivos CSV correctamente. Los cambios clave son:
+1. **Elimina `express-fileupload` de tus dependencias:**
+   ```bash
+   npm uninstall express-fileupload
+   ```
 
-1. Unificación del manejo de archivos con Multer
-2. Corrección de nombres de campos (`req.file` → `req.files`)
-3. Mejor validación de tipos MIME
-4. Conversión robusta de tipos de datos
-5. Manejo detallado de errores
-6. Configuración CORS actualizada
-7. Soporte para formatos CSV variados
+2. **Asegúrate de tener estas dependencias instaladas:**
+   ```bash
+   npm install multer csv-parse
+   ```
 
-Si persisten los problemas, revisa los logs del backend para mensajes específicos de error durante la carga del CSV.
+3. **Verifica que tu archivo `.env` tenga:**
+   ```env
+   # backend/.env
+   FRONTEND_URL=http://localhost:5500
+   # Asegúrate que este sea el puerto de tu frontend
+   ```
+
+4. **Reinicia completamente tu servidor backend después de hacer estos cambios.**
+
+### Resumen de cambios clave:
+
+1. **Backend:**
+   - Eliminado `express-fileupload`
+   - Usando solo `multer` para manejo de archivos
+   - Corregido `req.file` → `req.files.csv`
+   - Mejorado el parser CSV con conversión de tipos
+   - Rutas absolutas para archivos CSV
+
+2. **Frontend:**
+   - Asegurado que el FormData use el campo 'csv'
+   - Eliminado header 'Content-Type' en la petición
+
+3. **General:**
+   - Manejo de errores mejorado
+   - Validación de tipos de archivo más flexible
+   - Conversión robusta de números y fechas
+
+Con estos cambios exactos, tu sistema debería permitir subir y procesar archivos CSV correctamente. ¡Verifica cada cambio cuidadosamente!
