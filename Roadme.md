@@ -1,5 +1,12 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
+```
+// Agrega esto justo después de app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+```
 The requested module './utils/uploadMiddleware.js' does not provide an export named 'csvUpload'
     at ModuleJob._instantiate (node:internal/modules/esm/module_job:220:21)
     at async ModuleJob.run (node:internal/modules/esm/module_job:321:5)
