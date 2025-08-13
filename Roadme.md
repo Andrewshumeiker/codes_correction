@@ -1,6 +1,164 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
-Error: {"success":false,"error":"Error procesando CSV: res.status(...).strictContentLength is not a function"}
+// Reemplaza TODO el contenido de csvLoader.js con este código:
+import db from '../config/db.js';
+import { parse } from 'csv-parse/sync';
+
+export async function loadCSVData(csvString) {
+  try {
+    const records = parse(csvString, {
+      columns: true,
+      skip_empty_lines: true,
+      delimiter: ',',
+      trim: true,
+      skip_records_with_error: true,
+      cast: (value, context) => {
+        if (!value || value.trim() === '') return null;
+        
+        if (context.column.includes('Monto') || 
+            context.column.includes('Total') || 
+            context.column.includes('amount')) {
+          return parseFloat(value.replace(/[^0-9.-]/g, ''));
+        }
+        
+        if (context.column.includes('Fecha') || 
+            context.column.includes('date')) {
+          return new Date(value);
+        }
+        
+        return value;
+      }
+    });
+
+    if (!records || records.length === 0) {
+      throw new Error('El archivo CSV está vacío o no contiene datos válidos');
+    }
+
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    try {
+      // 1. Cargar clientes
+      const customerMap = new Map();
+      for (const record of records) {
+        const email = record['Correo Electrónico'];
+        if (!customerMap.has(email)) {
+          const [result] = await connection.execute(
+            `INSERT INTO customers (name, email, identification_number, address, phone)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               name = VALUES(name),
+               identification_number = VALUES(identification_number),
+               address = VALUES(address),
+               phone = VALUES(phone)`,
+            [
+              record['Nombre del Cliente'],
+              email,
+              record['Número de Identificación'],
+              record['Dirección'],
+              record['Teléfono']
+            ]
+          );
+          customerMap.set(email, result.insertId || result.affectedRows);
+        }
+      }
+
+      // 2. Cargar plataformas
+      const platformMap = new Map();
+      const uniquePlatforms = [...new Set(records.map(r => r['Plataforma Utilizada']))];
+      for (const platformName of uniquePlatforms) {
+        const [result] = await connection.execute(
+          `INSERT INTO platforms (name) VALUES (?) 
+           ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+          [platformName]
+        );
+        platformMap.set(platformName, result.insertId);
+      }
+
+      // 3. Cargar facturas
+      const invoiceMap = new Map();
+      for (const record of records) {
+        const invoiceNumber = record['Número de Factura'];
+        if (!invoiceMap.has(invoiceNumber)) {
+          const customerEmail = record['Correo Electrónico'];
+          const customerId = customerMap.get(customerEmail);
+          
+          const [invoiceResult] = await connection.execute(
+            `INSERT INTO invoices (
+              invoice_number, 
+              customer_id, 
+              billing_period, 
+              total_amount, 
+              status
+            ) VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              customer_id = VALUES(customer_id),
+              total_amount = VALUES(total_amount)`,
+            [
+              invoiceNumber,
+              customerId,
+              record['Período Facturado'],
+              parseFloat(record['Total Factura']),
+              'pending'
+            ]
+          );
+          
+          const invoiceId = invoiceResult.insertId || (
+            await connection.query(
+              'SELECT invoice_id FROM invoices WHERE invoice_number = ?',
+              [invoiceNumber]
+            )
+          )[0][0].invoice_id;
+          
+          invoiceMap.set(invoiceNumber, invoiceId);
+        }
+      }
+
+      // 4. Cargar transacciones
+      for (const record of records) {
+        const platformId = platformMap.get(record['Plataforma Utilizada']);
+        const invoiceId = invoiceMap.get(record['Número de Factura']);
+        
+        await connection.execute(
+          `INSERT INTO transactions (
+            transaction_id,
+            invoice_id,
+            platform_id,
+            amount,
+            transaction_date,
+            status
+          ) VALUES (?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            amount = VALUES(amount),
+            status = VALUES(status)`,
+          [
+            record['ID de Transacción'],
+            invoiceId,
+            platformId,
+            parseFloat(record['Monto']),
+            new Date(record['Fecha de Transacción']),
+            record['Estado']
+          ]
+        );
+      }
+
+      await connection.commit();
+      return { 
+        success: true, 
+        message: `${records.length} registros procesados correctamente` 
+      };
+    } catch (error) {
+      await connection.rollback();
+      console.error('Error en transacción:', error);
+      throw new Error(`Error en base de datos: ${error.message}`);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error en loadCSVData:', error);
+    throw new Error(`Error al procesar CSV: ${error.message}`);
+  }
+}
 ```
 });
 
