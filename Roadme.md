@@ -1,5 +1,27 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
+```
+import multer from 'multer';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    console.log('📁 Archivo recibido:', file.originalname);
+    
+    const isCSV = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'text/plain',
+      'application/octet-stream'
+    ].includes(file.mimetype) || file.originalname.toLowerCase().endsWith('.csv');
+    
+    isCSV ? cb(null, true) : cb(new Error('Solo se permiten CSV'), false);
+  },
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
+
+export default upload.single('csv');
+```
 
 import express from 'express';
 import bodyParser from 'body-parser';
