@@ -1,9 +1,6 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
-// Agrega esto justo después de app.use(cors(corsOptions));
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
+Error: {"success":false,"error":"Error procesando CSV: res.status(...).strictContentLength is not a function"}
 ```
 });
 
