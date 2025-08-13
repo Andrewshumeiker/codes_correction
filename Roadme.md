@@ -1,5 +1,53 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
+import express from 'express';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+import cors from 'cors';
+import customerRoutes from './routes/customerRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import  csvUpload  from './utils/uploadMiddleware.js'; // Cambio aquí
+import { loadCSVData } from './services/csvLoader.js';
+import db from './config/db.js';
+
+dotenv.config();
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Configuración de CORS actualizada
+const allowedOrigins = [
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:3000', // Añadir para React/Vue
+  'http://127.0.0.1:3000'  // Añadir para React/Vue
+];
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+app.use(bodyParser.json());
+
+// RUTAS
+app.use('/api/customers', customerRoutes);
+app.use('/api/reports', reportRoutes);
+
+// Endpoint para carga de CSV (CORREGIDO)
 // Reemplaza el endpoint de carga CSV con:
 app.post('/api/upload-csv', csvUpload, async (req, res) => {
   try {
@@ -33,6 +81,51 @@ app.post('/api/upload-csv', csvUpload, async (req, res) => {
     res.end();
   }
 });
+
+// Servir el frontend (si está en la misma instancia)
+app.use(express.static('../frontend/public'));
+
+// Ruta de prueba para verificar el backend
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Backend is running',
+    timestamp: new Date()
+  });
+});
+
+// Manejar rutas no encontradas
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Ruta no encontrada'
+  });
+});
+
+// Manejo de errores global
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    error: 'Error interno del servidor'
+  });
+});
+
+// Iniciar el servidor
+app.listen(PORT, () => {
+  console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
+});
+
+// Probar la conexión a la base de datos
+db.getConnection()
+  .then(connection => {
+    console.log('✅ Conexión a MySQL exitosa!');
+    connection.release();
+  })
+  .catch(error => {
+    console.error('❌ Error de conexión a MySQL:', error.message);
+  });
+
 ```
 ```
 
