@@ -1,31 +1,27 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 ```
-import multer from 'multer';
+The requested module './utils/uploadMiddleware.js' does not provide an export named 'csvUpload'
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:220:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:321:5)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:644:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'text/plain',
-      'application/octet-stream'
-    ];
-    
-    const isCSV = allowedMimes.includes(file.mimetype) || 
-                 file.originalname.toLowerCase().endsWith('.csv');
-    
-    if (isCSV) {
-      cb(null, true);
-    } else {
-      cb(new Error('Tipo de archivo inválido. Solo se permiten archivos CSV'), false);
-    }
-  },
-  limits: { fileSize: 20 * 1024 * 1024 }
-});
+Node.js v22.17.0
+coders@p4m2-0510:~/pd-sql-project/pd-sql-project/backend$ npm start
 
-// Exportar directamente el middleware
-export default upload.single('csv');
+> pd-sql-project@1.0.0 start
+> node src/app.js
+
+file:///home/coders/pd-sql-project/pd-sql-project/backend/src/app.js:7
+import { csvUpload } from './utils/uploadMiddleware.js'; // Cambio aquí
+         ^^^^^^^^^
+SyntaxError: The requested module './utils/uploadMiddleware.js' does not provide an export named 'csvUpload'
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:220:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:321:5)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:644:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.17.0
 ```
 ### 1. Archivo: `backend/app.js`
 
