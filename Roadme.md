@@ -1,5 +1,32 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
+```
+import multer from 'multer';
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'text/plain',
+      'application/octet-stream'
+    ];
+    
+    const isCSV = allowedMimes.includes(file.mimetype) || 
+                 file.originalname.toLowerCase().endsWith('.csv');
+    
+    if (isCSV) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo inválido. Solo se permiten archivos CSV'), false);
+    }
+  },
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
+
+// Exportar directamente el middleware
+export default upload.single('csv');
+```
 ### 1. Archivo: `backend/app.js`
 
 **Cambios necesarios:**
