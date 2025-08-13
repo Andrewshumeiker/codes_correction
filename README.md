@@ -1,6 +1,10 @@
 # codes_correction
 # db.js
 ```
+ALTER TABLE customers 
+MODIFY identification_number VARCHAR(50) DEFAULT '';
+```
+```
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 
