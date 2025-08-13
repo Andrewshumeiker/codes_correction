@@ -1,26 +1,176 @@
 Voy a explicarte exactamente dónde hacer cada cambio en tus archivos, línea por línea. Sigue estas instrucciones cuidadosamente:
 
 ```
-import multer from 'multer';
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    console.log('📁 Archivo recibido:', file.originalname);
+document.addEventListener('DOMContentLoaded', () => {
+  const customerForm = document.getElementById('customerForm');
+  const customerTable = document.querySelector('#customerTable tbody');
+  const loadCsvBtn = document.getElementById('loadCsvBtn');
+  
+  // Configurar la URL base del backend
+  const API_BASE_URL = 'http://localhost:3000';
+  
+  // Cargar clientes al iniciar
+  fetchCustomers();
+  
+  // Manejar formulario de clientes
+  customerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
     
-    const isCSV = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'text/plain',
-      'application/octet-stream'
-    ].includes(file.mimetype) || file.originalname.toLowerCase().endsWith('.csv');
+    const customer = {
+      id: document.getElementById('customerId').value,
+      name: document.getElementById('name').value,
+      email: document.getElementById('email').value
+    };
     
-    isCSV ? cb(null, true) : cb(new Error('Solo se permiten CSV'), false);
-  },
-  limits: { fileSize: 20 * 1024 * 1024 }
+    const method = customer.id ? 'PUT' : 'POST';
+    const url = customer.id 
+      ? `${API_BASE_URL}/api/customers/${customer.id}` 
+      : `${API_BASE_URL}/api/customers`;
+    
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customer)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      customerForm.reset();
+      document.getElementById('customerId').value = '';
+      await fetchCustomers();
+      
+      alert(result.message || 'Operación exitosa');
+    } catch (error) {
+      console.error('Error en el formulario:', error);
+      alert('Error: ' + error.message);
+    }
+  });
+  
+  // Botón de carga CSV
+  loadCsvBtn.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const formData = new FormData();
+      formData.append('csv', file); // 'csv' debe coincidir con el backend
+      
+      try {
+        loadCsvBtn.disabled = true;
+        loadCsvBtn.textContent = 'Cargando...';
+        
+        // IMPORTANTE: NO agregar headers 'Content-Type'
+        const response = await fetch(`${API_BASE_URL}/api/upload-csv`, {
+          method: 'POST',
+          body: formData
+        });
+    
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Error en carga: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        alert(result.message || 'Datos cargados exitosamente');
+        fetchCustomers();
+      } catch (error) {
+        console.error('Error cargando CSV:', error);
+        alert('Error: ' + error.message);
+      } finally {
+        loadCsvBtn.disabled = false;
+        loadCsvBtn.textContent = 'Cargar CSV';
+      }
+    };
+    
+    input.click();
+  });
+  
+  // Función para cargar y mostrar clientes
+  async function fetchCustomers() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/customers`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        renderCustomers(result.data);
+      } else {
+        throw new Error(result.error || 'Datos inválidos en la respuesta');
+      }
+    } catch (error) {
+      console.error('Error obteniendo clientes:', error);
+      alert('Error: ' + error.message);
+    }
+  }
+  
+  // Función para renderizar clientes
+  function renderCustomers(customers) {
+    customerTable.innerHTML = '';
+    
+    customers.forEach(customer => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${customer.customer_id}</td>
+        <td>${customer.name}</td>
+        <td>${customer.email}</td>
+        <td class="actions">
+          <button onclick="editCustomer(${customer.customer_id}, '${escapeString(customer.name)}', '${escapeString(customer.email)}')">Editar</button>
+          <button onclick="deleteCustomer(${customer.customer_id})">Eliminar</button>
+        </td>
+      `;
+      customerTable.appendChild(row);
+    });
+  }
+  
+  // Escapar strings para evitar problemas con comillas
+  function escapeString(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
+  }
+  
+  // Funciones globales para acciones
+  window.editCustomer = (id, name, email) => {
+    document.getElementById('customerId').value = id;
+    document.getElementById('name').value = name;
+    document.getElementById('email').value = email;
+  };
+  
+  window.deleteCustomer = async (id) => {
+    if (confirm('¿Estás seguro de eliminar este cliente?')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/customers/${id}`, {
+          method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        fetchCustomers();
+        alert(result.message || 'Cliente eliminado');
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+  };
 });
-
-export default upload.single('csv');
 ```
 
 
