@@ -1,12 +1,14 @@
 # codes_correction
-ALTER TABLE customers
-ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
-use pd_andres_covaleda_gosling;
-ALTER TABLE customers ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
+sql
+```
+USE pd_andres_covaleda_gosling;
 
-Error Code: 1075. Incorrect table definition; there can be only one auto column and it must be defined as a key
+-- Verificar si customer_id ya es PK y autoincrement
+ALTER TABLE customers 
+MODIFY COLUMN customer_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+ADD PRIMARY KEY (customer_id);
 
-# error
+```
 ```
 import db from '../config/db.js';
 import { parse } from 'csv-parse/sync';
