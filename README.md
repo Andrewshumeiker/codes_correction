@@ -1,16 +1,55 @@
 # codes_correction
 # error
 ```
-Error en carga CSV: TypeError: Bind parameters must not contain undefined. To pass SQL NULL specify JS null
-    at /home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/base/connection.js:660:17
-    at Array.forEach (<anonymous>)
-    at PoolConnection.execute (/home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/base/connection.js:652:22)
-    at /home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/promise/connection.js:56:11
-    at new Promise (<anonymous>)
-    at PromisePoolConnection.execute (/home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/promise/connection.js:53:12)
-    at loadCSVData (file:///home/coders/Descargas/pd-sql-project/backend/src/services/csvLoader.js:28:43)
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async file:///home/coders/Descargas/pd-sql-project/backend/src/app.js:48:20
+import db from '../config/db.js';
+import { parse } from 'csv-parse/sync';
+
+export async function loadCSVData(csvString) {
+  const records = parse(csvString, {
+    columns: true,
+    skip_empty_lines: true,
+    delimiter: ',',
+    trim: true,
+    skip_records_with_error: true
+  });
+
+  if (records.length === 0) {
+    throw new Error('El CSV está vacío o no tiene formato válido');
+  }
+
+  // Normalizar datos: reemplazar undefined por cadena vacía
+  const normalizedRecords = records.map(row => {
+    return {
+      name: row.name ?? '',
+      email: row.email ?? '',
+      phone: row.phone ?? '',
+      address: row.address ?? '',
+      identification_number: row.identification_number ?? '',
+      role: row.role ?? ''
+    };
+  });
+
+  const insertQuery = `
+    INSERT INTO customers
+      (name, email, phone, address, identification_number, role)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  // Insertar fila por fila
+  for (const record of normalizedRecords) {
+    await db.execute(insertQuery, [
+      record.name,
+      record.email,
+      record.phone,
+      record.address,
+      record.identification_number,
+      record.role
+    ]);
+  }
+
+  return { message: `Se insertaron ${normalizedRecords.length} registros correctamente` };
+}
+
 ```
 # ddl.sql
 ```
