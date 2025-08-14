@@ -1,4 +1,17 @@
 # codes_correction
+# error
+```
+Error en carga CSV: TypeError: Bind parameters must not contain undefined. To pass SQL NULL specify JS null
+    at /home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/base/connection.js:660:17
+    at Array.forEach (<anonymous>)
+    at PoolConnection.execute (/home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/base/connection.js:652:22)
+    at /home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/promise/connection.js:56:11
+    at new Promise (<anonymous>)
+    at PromisePoolConnection.execute (/home/coders/Descargas/pd-sql-project/backend/node_modules/mysql2/lib/promise/connection.js:53:12)
+    at loadCSVData (file:///home/coders/Descargas/pd-sql-project/backend/src/services/csvLoader.js:28:43)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async file:///home/coders/Descargas/pd-sql-project/backend/src/app.js:48:20
+```
 # ddl.sql
 ```
 CREATE DATABASE IF NOT EXISTS pd_andres_covaleda_gosling;
