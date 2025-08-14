@@ -561,24 +561,159 @@ export const authenticate = (req, res, next) => {
   }
 };
 ```
-# customerRoutes.js
+# csvLoader.js
 ```
-import express from 'express';
-import {
-  createCustomer,
-  getAllCustomers,
-  updateCustomer,
-  deleteCustomer
-} from '../controllers/customerController.js';
+// backend/src/services/csvLoader.js
+import db from '../config/db.js';
+import { parse } from 'csv-parse/sync';
 
-const router = express.Router();
+export async function loadCSVData(csvString) {
+  const records = parse(csvString, {
+    columns: true,
+    skip_empty_lines: true,
+    delimiter: ',',
+    trim: true,
+    skip_records_with_error: true
+  });
 
-router.post('/', createCustomer);
-router.get('/', getAllCustomers);
-router.put('/:id', updateCustomer);
-router.delete('/:id', deleteCustomer);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
 
-export default router;
+    // Mapas para evitar búsquedas repetidas
+    const customerMap = new Map();
+    const platformMap = new Map();
+
+    // ======================
+    // 1. Cargar clientes
+    // ======================
+    for (const record of records) {
+      const email = record['Correo Electrónico'];
+      if (!customerMap.has(email)) {
+        const [result] = await connection.execute(
+          `INSERT INTO customers (name, email, identification_number, address, phone)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             name = VALUES(name),
+             identification_number = VALUES(identification_number),
+             address = VALUES(address),
+             phone = VALUES(phone)`,
+          [
+            record['Nombre del Cliente'],
+            email,
+            record['Número de Identificación'],
+            record['Dirección'],
+            record['Teléfono']
+          ]
+        );
+
+        let customerId;
+        if (result.insertId && result.insertId > 0) {
+          customerId = result.insertId; // Nuevo cliente
+        } else {
+          const [[existing]] = await connection.query(
+            'SELECT customer_id FROM customers WHERE email = ?',
+            [email]
+          );
+          customerId = existing.customer_id; // Cliente existente
+        }
+
+        customerMap.set(email, customerId);
+      }
+    }
+
+    // ======================
+    // 2. Cargar plataformas
+    // ======================
+    for (const record of records) {
+      const platformName = record['Plataforma'];
+      if (!platformMap.has(platformName)) {
+        const [result] = await connection.execute(
+          `INSERT INTO platforms (name)
+           VALUES (?)
+           ON DUPLICATE KEY UPDATE
+             name = VALUES(name)`,
+          [platformName]
+        );
+
+        let platformId;
+        if (result.insertId && result.insertId > 0) {
+          platformId = result.insertId; // Nueva plataforma
+        } else {
+          const [[existing]] = await connection.query(
+            'SELECT platform_id FROM platforms WHERE name = ?',
+            [platformName]
+          );
+          platformId = existing.platform_id; // Plataforma existente
+        }
+
+        platformMap.set(platformName, platformId);
+      }
+    }
+
+    // ======================
+    // 3. Cargar facturas y transacciones
+    // ======================
+    for (const record of records) {
+      const customerId = customerMap.get(record['Correo Electrónico']);
+      const platformId = platformMap.get(record['Plataforma']);
+
+      // Insertar/actualizar factura
+      const [invoiceResult] = await connection.execute(
+        `INSERT INTO invoices (invoice_number, customer_id, platform_id, invoice_date, total_amount)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           customer_id = VALUES(customer_id),
+           platform_id = VALUES(platform_id),
+           invoice_date = VALUES(invoice_date),
+           total_amount = VALUES(total_amount)`,
+        [
+          record['Número de Factura'],
+          customerId,
+          platformId,
+          record['Fecha de Factura'],
+          record['Total']
+        ]
+      );
+
+      let invoiceId;
+      if (invoiceResult.insertId && invoiceResult.insertId > 0) {
+        invoiceId = invoiceResult.insertId; // Nueva factura
+      } else {
+        const [[existingInvoice]] = await connection.query(
+          'SELECT invoice_id FROM invoices WHERE invoice_number = ?',
+          [record['Número de Factura']]
+        );
+        invoiceId = existingInvoice.invoice_id; // Factura existente
+      }
+
+      // Insertar transacción asociada a la factura
+      await connection.execute(
+        `INSERT INTO transactions (invoice_id, payment_method, payment_date, amount)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           payment_method = VALUES(payment_method),
+           payment_date = VALUES(payment_date),
+           amount = VALUES(amount)`,
+        [
+          invoiceId,
+          record['Método de Pago'],
+          record['Fecha de Pago'],
+          record['Monto Pagado']
+        ]
+      );
+    }
+
+    await connection.commit();
+    return { success: true, message: 'Datos cargados y actualizados correctamente' };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 ```
 reportRoutes.js
 ```
@@ -604,84 +739,7 @@ export default router;
 ```
 # csvLoader.js
 ```
-// backend/src/services/csvLoader.js
-import db from '../config/db.js';
-import { parse } from 'csv-parse/sync';
 
-export async function loadCSVData(csvString) {
-  const records = parse(csvString, {
-    columns: true,
-    skip_empty_lines: true,
-    delimiter: ',',
-    trim: true,
-    skip_records_with_error: true
-  });
-
-  if (records.length === 0) {
-    throw new Error('El archivo CSV está vacío o no contiene datos válidos');
-  }
-
-  const connection = await db.getConnection();
-  await connection.beginTransaction();
-
-  try {
-    // 1. Cargar clientes (existente)
-    const customerMap = new Map();
-    for (const record of records) {
-      const email = record['Correo Electrónico'];
-      if (!customerMap.has(email)) {
-        const [result] = await connection.execute(
-          `INSERT INTO customers (name, email, identification_number, address, phone)
-           VALUES (?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-             name = VALUES(name),
-             identification_number = VALUES(identification_number),
-             address = VALUES(address),
-             phone = VALUES(phone)`,
-          [
-            record['Nombre del Cliente'],
-            email,
-            record['Número de Identificación'],
-            record['Dirección'],
-            record['Teléfono']
-          ]
-        );
-        customerMap.set(email, result.insertId || result.affectedRows);
-      }
-    }
-
-    // 2. Cargar plataformas (existente)
-     const platformMap = new Map();
-    const uniquePlatforms = [...new Set(records.map(r => r['Plataforma Utilizada']))];
-    for (const platformName of uniquePlatforms) {
-      const [result] = await connection.execute(
-        `INSERT INTO platforms (name) VALUES (?) 
-         ON DUPLICATE KEY UPDATE name = VALUES(name)`,
-        [platformName]
-      );
-      platformMap.set(platformName, result.insertId);
-    }
-
-    // 3. Cargar facturas (NUEVO)
-    const invoiceMap = new Map();
-    for (const record of records) {
-      const invoiceNumber = record['Número de Factura'];
-      if (!invoiceMap.has(invoiceNumber)) {
-        const customerEmail = record['Correo Electrónico'];
-        const customerId = customerMap.get(customerEmail);
-        
-        const [invoiceResult] = await connection.execute(
-          `INSERT INTO invoices (
-            invoice_number, 
-            customer_id, 
-            billing_period, 
-            total_amount, 
-            status
-          ) VALUES (?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            customer_id = VALUES(customer_id),
-            total_amount = VALUES(total_amount)`,
-          [
             invoiceNumber,
             customerId,
             record['Período Facturado'], // Nueva columna requerida
