@@ -1,12 +1,146 @@
 # codes_correction
 sql
 ```
-USE pd_andres_covaleda_gosling;
+// frontend/public/main.js
+document.addEventListener('DOMContentLoaded', () => {
+  const customerForm = document.getElementById('customerForm');
+  const customerTable = document.querySelector('#customerTable tbody');
+  const loadCsvBtn = document.getElementById('loadCsvBtn');
 
--- Verificar si customer_id ya es PK y autoincrement
-ALTER TABLE customers 
-MODIFY COLUMN customer_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-ADD PRIMARY KEY (customer_id);
+  const API_BASE_URL = 'http://localhost:3000';
+
+  fetchCustomers();
+
+  customerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const customer = {
+      id: document.getElementById('customerId').value,
+      name: document.getElementById('name').value,
+      email: document.getElementById('email').value,
+      identification_number: document.getElementById('identification_number')?.value || '',
+      address: document.getElementById('address')?.value || '',
+      phone: document.getElementById('phone')?.value || ''
+    };
+
+    const method = customer.id ? 'PUT' : 'POST';
+    const url = customer.id
+      ? `${API_BASE_URL}/api/customers/${customer.id}`
+      : `${API_BASE_URL}/api/customers`;
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customer)
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      await fetchCustomers();
+      customerForm.reset();
+      document.getElementById('customerId').value = '';
+      alert('Operación exitosa');
+    } catch (err) {
+      console.error(err);
+      alert('Error: ' + err.message);
+    }
+  });
+
+  loadCsvBtn.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('csv', file); // <-- nombre esperado por el backend
+
+      try {
+        loadCsvBtn.disabled = true;
+        loadCsvBtn.textContent = 'Cargando...';
+
+        const response = await fetch(`${API_BASE_URL}/api/upload-csv`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error en carga');
+
+        alert(result.message || 'CSV cargado');
+        await fetchCustomers();
+      } catch (err) {
+        console.error('Error cargando CSV:', err);
+        alert('Error: ' + err.message);
+      } finally {
+        loadCsvBtn.disabled = false;
+        loadCsvBtn.textContent = 'Cargar CSV';
+      }
+    };
+
+    input.click();
+  });
+
+  async function fetchCustomers() {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/customers`);
+      if (!resp.ok) throw new Error(await resp.text());
+      const result = await resp.json();
+      if (!result.success) throw new Error(result.error || 'Respuesta inválida');
+      renderCustomers(result.data);
+    } catch (err) {
+      console.error('Error obteniendo clientes:', err);
+      alert('Error: ' + err.message);
+    }
+  }
+
+  function renderCustomers(customers) {
+    customerTable.innerHTML = '';
+    customers.forEach(c => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${c.customer_id}</td>
+        <td>${c.name}</td>
+        <td>${c.email}</td>
+        <td>${c.identification_number ?? ''}</td>
+        <td>${c.address ?? ''}</td>
+        <td>${c.phone ?? ''}</td>
+        <td class="actions">
+          <button onclick="editCustomer(${c.customer_id}, '${escapeString(c.name)}', '${escapeString(c.email)}')">Editar</button>
+          <button onclick="deleteCustomer(${c.customer_id})">Eliminar</button>
+        </td>
+      `;
+      customerTable.appendChild(row);
+    });
+  }
+
+  function escapeString(str = '') {
+    return (str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
+  }
+
+  // Exponer helpers globales
+  window.editCustomer = (id, name, email) => {
+    document.getElementById('customerId').value = id;
+    document.getElementById('name').value = name;
+    document.getElementById('email').value = email;
+  };
+
+  window.deleteCustomer = async (id) => {
+    if (!confirm('¿Eliminar este cliente?')) return;
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/customers/${id}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(await resp.text());
+      await fetchCustomers();
+      alert('Cliente eliminado');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  };
+});
 
 ```
 ```
