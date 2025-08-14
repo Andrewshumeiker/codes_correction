@@ -1,4 +1,7 @@
 # codes_correction
+SELECT COUNT(*) FROM customers;
+SELECT * FROM customers ORDER BY id DESC LIMIT 10;
+
 # error
 ```
 import db from '../config/db.js';
