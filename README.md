@@ -1,4 +1,199 @@
 # codes_correction
+# ddl.sql
+```
+CREATE DATABASE IF NOT EXISTS pd_andres_covaleda_gosling;
+USE pd_andres_covaleda_gosling;
+
+-- Tabla de clientes
+CREATE TABLE IF NOT EXISTS customers (
+    customer_id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    identification_number VARCHAR(50) NOT NULL,
+    address TEXT,
+    phone VARCHAR(50)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tabla de plataformas
+CREATE TABLE IF NOT EXISTS platforms (
+    platform_id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tabla de facturas
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id INT AUTO_INCREMENT PRIMARY KEY,
+    invoice_number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id INT NOT NULL,
+    billing_period VARCHAR(20) NOT NULL,
+    total_amount DECIMAL(12, 2) NOT NULL,
+    status ENUM('pending', 'partial', 'paid') DEFAULT 'pending',
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tabla de transacciones
+CREATE TABLE IF NOT EXISTS transactions (
+    transaction_id VARCHAR(50) PRIMARY KEY,
+    invoice_id INT NOT NULL,
+    platform_id INT NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    transaction_date DATETIME NOT NULL,
+    status ENUM('Pendiente', 'Completada', 'Fallida') NOT NULL,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id),
+    FOREIGN KEY (platform_id) REFERENCES platforms(platform_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Índices para mejorar rendimiento
+CREATE INDEX idx_invoices_customer ON invoices(customer_id);
+CREATE INDEX idx_transactions_invoice ON transactions(invoice_id);
+CREATE INDEX idx_transactions_platform ON transactions(platform_id);
+
+```
+
+# csvLoader.js
+```
+// backend/src/services/csvLoader.js
+import db from '../config/db.js';
+import { parse } from 'csv-parse/sync';
+
+export async function loadCSVData(csvString) {
+  const records = parse(csvString, {
+    columns: true,
+    skip_empty_lines: true,
+    delimiter: ',',
+    trim: true,
+    skip_records_with_error: true
+  });
+
+  if (records.length === 0) {
+    throw new Error('El archivo CSV está vacío o no contiene datos válidos');
+  }
+
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    // 1. Cargar clientes (existente)
+    const customerMap = new Map();
+    for (const record of records) {
+      const email = record['Correo Electrónico'];
+      if (!customerMap.has(email)) {
+        const [result] = await connection.execute(
+          `INSERT INTO customers (name, email, identification_number, address, phone)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             name = VALUES(name),
+             identification_number = VALUES(identification_number),
+             address = VALUES(address),
+             phone = VALUES(phone)`,
+          [
+            record['Nombre del Cliente'],
+            email,
+            record['Número de Identificación'],
+            record['Dirección'],
+            record['Teléfono']
+          ]
+        );
+        customerMap.set(email, result.insertId || result.affectedRows);
+      }
+    }
+
+    // 2. Cargar plataformas (existente)
+     const platformMap = new Map();
+    const uniquePlatforms = [...new Set(records.map(r => r['Plataforma Utilizada']))];
+    for (const platformName of uniquePlatforms) {
+      const [result] = await connection.execute(
+        `INSERT INTO platforms (name) VALUES (?) 
+         ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+        [platformName]
+      );
+      platformMap.set(platformName, result.insertId);
+    }
+
+    // 3. Cargar facturas (NUEVO)
+    const invoiceMap = new Map();
+    for (const record of records) {
+      const invoiceNumber = record['Número de Factura'];
+      if (!invoiceMap.has(invoiceNumber)) {
+        const customerEmail = record['Correo Electrónico'];
+        const customerId = customerMap.get(customerEmail);
+        
+        const [invoiceResult] = await connection.execute(
+          `INSERT INTO invoices (
+            invoice_number, 
+            customer_id, 
+            billing_period, 
+            total_amount, 
+            status
+          ) VALUES (?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            customer_id = VALUES(customer_id),
+            total_amount = VALUES(total_amount)`,
+          [
+            invoiceNumber,
+            customerId,
+            record['Período Facturado'], // Nueva columna requerida
+            parseFloat(record['Total Factura']), // Nueva columna
+            'pending' // Valor por defecto
+          ]
+        );
+        
+        const invoiceId = invoiceResult.insertId || (
+          await connection.query(
+            'SELECT invoice_id FROM invoices WHERE invoice_number = ?',
+            [invoiceNumber]
+          )
+        )[0][0].invoice_id;
+        
+        invoiceMap.set(invoiceNumber, invoiceId);
+      }
+    }
+
+    // 4. Cargar transacciones (NUEVO)
+    for (const record of records) {
+      const platformId = platformMap.get(record['Plataforma Utilizada']);
+      const invoiceId = invoiceMap.get(record['Número de Factura']);
+      
+      await connection.execute(
+        `INSERT INTO transactions (
+          transaction_id,
+          invoice_id,
+          platform_id,
+          amount,
+          transaction_date,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          amount = VALUES(amount),
+          status = VALUES(status)`,
+        [
+          record['ID de Transacción'], // Nueva columna
+          invoiceId,
+          platformId,
+          parseFloat(record['Monto']), // Nueva columna
+          new Date(record['Fecha de Transacción']), // Nueva columna
+          record['Estado'] // Nueva columna
+        ]
+      );
+    }
+
+    await connection.commit();
+    return { 
+      success: true, 
+      message: `${records.length} registros procesados correctamente` 
+    };
+  } catch (error) {
+    await connection.rollback();
+    
+    // Registrar error detallado
+    console.error('Error en transacción:', error);
+    
+    throw new Error(`Error en base de datos: ${error.message}`);
+  } finally {
+    connection.release();
+  }
+}
+```
 # db.js
 ```
 ALTER TABLE customers 
