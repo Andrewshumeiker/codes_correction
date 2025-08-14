@@ -1,6 +1,8 @@
 # codes_correction
 ALTER TABLE customers
 ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
+use pd_andres_covaleda_gosling;
+ALTER TABLE customers ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
 
 Error Code: 1075. Incorrect table definition; there can be only one auto column and it must be defined as a key
 
