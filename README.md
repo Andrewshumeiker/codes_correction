@@ -1,6 +1,6 @@
 # codes_correction
-SELECT COUNT(*) FROM customers;
-SELECT * FROM customers ORDER BY id DESC LIMIT 10;
+ALTER TABLE customers
+ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
 
 # error
 ```
