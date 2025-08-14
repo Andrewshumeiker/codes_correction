@@ -6,6 +6,101 @@ MODIFY identification_number VARCHAR(50) DEFAULT '';
 ```
 # app.js
 ```
+// backend/src/App.js
+import express from 'express';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+import cors from 'cors';
+import customerRoutes from './routes/customerRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import { csvUpload } from './utils/uploadMiddleware.js';
+import { loadCSVData } from './services/csvLoader.js';
+import db from './config/db.js';
+
+dotenv.config();
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Configuración de CORS
+const corsOptions = {
+  origin: [
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.use(bodyParser.json());
+
+// Rutas
+app.use('/api/customers', customerRoutes);
+app.use('/api/reports', reportRoutes);
+
+// Endpoint para carga de CSV
+app.post('/api/upload-csv', csvUpload, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No se subió ningún archivo CSV'
+      });
+    }
+
+    const csvString = req.file.buffer.toString('utf8');
+    const result = await loadCSVData(csvString);
+
+    res.status(200).json({
+      success: true,
+      message: result.message
+    });
+  } catch (error) {
+    console.error('Error en carga CSV:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error procesando CSV: ' + error.message
+    });
+  }
+});
+
+// Servir frontend
+app.use(express.static('../frontend/public'));
+
+// Ruta de prueba
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, message: 'Backend is running', timestamp: new Date() });
+});
+
+// Manejo de rutas no encontradas
+app.use((req, res) => {
+  res.status(404).json({ success: false, error: 'Ruta no encontrada' });
+});
+
+// Manejo de errores global
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ success: false, error: 'Error interno del servidor' });
+});
+
+// Iniciar servidor
+app.listen(PORT, () => {
+  console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
+});
+
+// Probar conexión a DB
+db.getConnection()
+  .then(connection => {
+    console.log('✅ Conexión a MySQL exitosa!');
+    connection.release();
+  })
+  .catch(error => {
+    console.error('❌ Error de conexión a MySQL:', error.message);
+  });
 
 
 ```
@@ -680,27 +775,23 @@ main();
 ```
 # main.js
 ```
+// frontend/js/main.js
 document.addEventListener('DOMContentLoaded', () => {
   const customerForm = document.getElementById('customerForm');
   const customerTable = document.querySelector('#customerTable tbody');
   const loadCsvBtn = document.getElementById('loadCsvBtn');
   
-  // Configurar la URL base del backend
   const API_BASE_URL = 'http://localhost:3000';
   
-  // Cargar clientes al iniciar
   fetchCustomers();
   
-  // Manejar formulario de clientes
   customerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
     const customer = {
       id: document.getElementById('customerId').value,
       name: document.getElementById('name').value,
       email: document.getElementById('email').value
     };
-    
     const method = customer.id ? 'PUT' : 'POST';
     const url = customer.id 
       ? `${API_BASE_URL}/api/customers/${customer.id}` 
@@ -712,26 +803,18 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(customer)
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP error! status: ${response.status}`);
-      }
-      
       const result = await response.json();
-      
       customerForm.reset();
       document.getElementById('customerId').value = '';
       await fetchCustomers();
-      
       alert(result.message || 'Operación exitosa');
     } catch (error) {
       console.error('Error en el formulario:', error);
       alert('Error: ' + error.message);
     }
   });
-  
-  // Botón de carga CSV
+
+  // Cargar CSV
   loadCsvBtn.addEventListener('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -740,24 +823,18 @@ document.addEventListener('DOMContentLoaded', () => {
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      
       const formData = new FormData();
       formData.append('csv', file);
-      
+
       try {
         loadCsvBtn.disabled = true;
         loadCsvBtn.textContent = 'Cargando...';
-        
+
         const response = await fetch(`${API_BASE_URL}/api/upload-csv`, {
           method: 'POST',
           body: formData
         });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || `Error en carga: ${response.status}`);
-        }
-        
+
         const result = await response.json();
         alert(result.message || 'Datos cargados exitosamente');
         fetchCustomers();
@@ -769,37 +846,23 @@ document.addEventListener('DOMContentLoaded', () => {
         loadCsvBtn.textContent = 'Cargar CSV';
       }
     };
-    
+
     input.click();
   });
-  
-  // Función para cargar y mostrar clientes
+
   async function fetchCustomers() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/customers`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP error! status: ${response.status}`);
-      }
-      
       const result = await response.json();
-      
-      if (result.success && result.data) {
-        renderCustomers(result.data);
-      } else {
-        throw new Error(result.error || 'Datos inválidos en la respuesta');
-      }
+      if (result.success && result.data) renderCustomers(result.data);
     } catch (error) {
       console.error('Error obteniendo clientes:', error);
       alert('Error: ' + error.message);
     }
   }
-  
-  // Función para renderizar clientes
+
   function renderCustomers(customers) {
     customerTable.innerHTML = '';
-    
     customers.forEach(customer => {
       const row = document.createElement('tr');
       row.innerHTML = `
@@ -814,31 +877,21 @@ document.addEventListener('DOMContentLoaded', () => {
       customerTable.appendChild(row);
     });
   }
-  
-  // Escapar strings para evitar problemas con comillas
+
   function escapeString(str) {
     return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
   }
-  
-  // Funciones globales para acciones
+
   window.editCustomer = (id, name, email) => {
     document.getElementById('customerId').value = id;
     document.getElementById('name').value = name;
     document.getElementById('email').value = email;
   };
-  
+
   window.deleteCustomer = async (id) => {
     if (confirm('¿Estás seguro de eliminar este cliente?')) {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/customers/${id}`, {
-          method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || `HTTP error! status: ${response.status}`);
-        }
-        
+        const response = await fetch(`${API_BASE_URL}/api/customers/${id}`, { method: 'DELETE' });
         const result = await response.json();
         fetchCustomers();
         alert(result.message || 'Cliente eliminado');
@@ -848,5 +901,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+
 ```
 ```
